@@ -1,0 +1,68 @@
+# =============================================================================
+# LLMLAB — declarative stack definition (Podman Compose)
+# Matches the running lab exactly. Apply with:  podman compose -f compose.yaml up -d
+# Tear down with:                              podman compose -f compose.yaml down
+# NOTE: bring-up.sh and this file are equivalent; use either, not both.
+# Secrets: load first ->  set -a; source ./lab.env; set +a; export LLAMA_KEY=$(cat .llama_key); export OPENROUTER_KEY=$(cat .openrouter_key)
+# =============================================================================
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: postgres
+    networks: [llmlab]
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${SPLUNK_PASSWORD}
+      POSTGRES_DB: litellm
+
+  splunk:
+    image: docker.io/splunk/splunk:latest
+    container_name: splunk
+    hostname: splunk
+    networks: [llmlab]
+    ports:
+      - "127.0.0.1:8000:8000"   # Splunk Web UI - localhost only
+      - "127.0.0.1:8088:8088"   # HEC - localhost only
+    environment:
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_GENERAL_TERMS: --accept-sgt-current-at-splunk-com
+      SPLUNK_PASSWORD: ${SPLUNK_PASSWORD}
+      SPLUNK_HEC_TOKEN: ${HEC_TOKEN}
+      SPLUNK_HEC_SSL: "false"
+
+  otelcol:
+    image: docker.io/otel/opentelemetry-collector-contrib:latest
+    container_name: otelcol
+    networks: [llmlab]
+    environment:
+      HEC_TOKEN: ${HEC_TOKEN}
+    volumes:
+      - ./otel-config.yaml:/etc/otelcol-contrib/config.yaml:Z
+    depends_on:
+      - splunk
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: litellm
+    networks: [llmlab]
+    ports:
+      - "127.0.0.1:4000:4000"   # LiteLLM API + admin UI - localhost only
+    environment:
+      LLAMA_KEY: ${LLAMA_KEY}
+      OPENROUTER_KEY: ${OPENROUTER_KEY}
+      MASTER_KEY: ${MASTER_KEY}
+      USER_KEY: ${USER_KEY}
+      BUDGET_KEY: ${BUDGET_KEY}
+      DATABASE_URL: postgresql://litellm:${SPLUNK_PASSWORD}@postgres:5432/litellm
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
+      STORE_MODEL_IN_DB: "True"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:Z
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    depends_on:
+      - postgres
+      - otelcol
+
+networks:
+  llmlab:
+    external: true   # created by bring-up.sh / podman network create llmlab

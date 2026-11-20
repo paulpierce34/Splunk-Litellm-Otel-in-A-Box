@@ -1,0 +1,28 @@
+model_list:
+  # Enclave stand-in: local llama.cpp CUDA server (host.docker.internal from containers)
+  - model_name: qwen3-8b
+    litellm_params:
+      model: openai/Qwen3-8B-128K-Q4_K_M
+      api_base: http://172.27.176.1:18434/v1
+      api_key: os.environ/LLAMA_KEY
+
+  # Optional second model (cloud, free tier) for model-level RBAC testing
+  - model_name: cloud-model
+    litellm_params:
+      model: openrouter/google/gemma-4-31b-it:free
+      api_key: os.environ/OPENROUTER_KEY
+
+  # Auto-router fallback: picks any available free model (resilient to per-model 429s)
+  - model_name: cloud-auto
+    litellm_params:
+      model: openrouter/openrouter/free
+      api_key: os.environ/OPENROUTER_KEY
+
+general_settings:
+  master_key: os.environ/MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+
+litellm_settings:
+  success_callback: ["otel"]
+  failure_callback: ["otel"]
+  service_callback: ["otel"]

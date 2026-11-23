@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LLMLab — Threat Model (MITRE ATLAS) — External Trusted Provider</title>
+<style>
+  body{margin:0;background:#020617;color:#e2e8f0;font-family:'JetBrains Mono',Consolas,monospace;padding:32px}
+  .header{margin-bottom:24px}
+  .header h1{font-size:20px;margin:0;display:flex;align-items:center;gap:10px}
+  .pulse{width:9px;height:9px;border-radius:50%;background:#f87171;animation:p 2s infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.3}}
+  .header p{color:#64748b;font-size:12px;margin:6px 0 0}
+  .card{background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;margin-top:24px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .card h3{font-size:12px;margin:0 0 8px;color:#94a3b8;font-weight:600}
+  .card ul{margin:0;padding-left:16px;font-size:11px;line-height:1.9;color:#cbd5e1}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+  .cyan{background:#22d3ee}.emerald{background:#34d399}.violet{background:#a78bfa}
+  .rose{background:#fb7185}.orange{background:#fb923c}.slate{background:#94a3b8}.red{background:#f87171}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:11px}
+  th,td{border:1px solid #1e293b;padding:6px 10px;text-align:left;vertical-align:top}
+  th{color:#94a3b8;font-weight:600;background:#111c2e}
+  td code{color:#f87171}
+  .tid{color:#f87171}
+  footer{color:#475569;font-size:10px;margin-top:20px;text-align:center}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1><span class="pulse"></span> LLMLAB — THREAT MODEL · MITRE ATLAS OVERLAY</h1>
+  <p>Trusted external inference provider crossing the firewall boundary · copy of llmlab-architecture.html · generated 2026-11-23</p>
+</div>
+
+<div class="card" style="padding:8px">
+<svg viewBox="0 0 1200 800" width="100%" style="display:block">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+    </pattern>
+    <marker id="arrC" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#22d3ee"/></marker>
+    <marker id="arrO" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#fb923c"/></marker>
+    <marker id="arrV" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#a78bfa"/></marker>
+    <marker id="arrX" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#fbbf24"/></marker>
+    <marker id="arrR" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#f87171"/></marker>
+  </defs>
+  <rect width="1200" height="800" fill="url(#grid)"/>
+
+  <!-- ============ ZONES ============ -->
+  <rect x="50" y="110" width="780" height="560" rx="12" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="620" y="134" font-size="10" fill="#fbbf24">INSIDE — YOUR FIREWALL</text>
+  <text x="880" y="42" font-size="10" fill="#94a3b8">EXTERNAL — beyond your control</text>
+
+  <!-- ============ FLOW ARROWS (orthogonal, one per lane) ============ -->
+  <g stroke-width="1.6" fill="none">
+    <line x1="300" y1="245" x2="436" y2="245" stroke="#22d3ee" marker-end="url(#arrC)"/>
+    <line x1="550" y1="320" x2="550" y2="396" stroke="#a78bfa" marker-end="url(#arrV)"/>
+    <path d="M 500 320 V 360 H 195 V 396" stroke="#fb923c" marker-end="url(#arrO)"/>
+    <line x1="195" y1="490" x2="195" y2="536" stroke="#fb923c" marker-end="url(#arrO)"/>
+    <line x1="660" y1="225" x2="876" y2="225" stroke="#fbbf24" stroke-width="2.4" marker-end="url(#arrX)"/>
+    <line x1="880" y1="285" x2="664" y2="285" stroke="#fbbf24" stroke-width="2.4" marker-end="url(#arrX)"/>
+  </g>
+  <g font-size="8" fill="#64748b">
+    <text x="305" y="236" fill="#22d3ee">sk-user-… key</text>
+    <text x="560" y="362" fill="#a78bfa">keys · spend</text>
+    <text x="210" y="354" fill="#fb923c">OTLP :4318</text>
+    <text x="210" y="518" fill="#fb923c">HEC :8088</text>
+  </g>
+
+  <!-- crossing labels (each arrow owns the space beside it) -->
+  <g font-size="8" fill="#fbbf24">
+    <text x="690" y="200">EGRESS — prompts leave</text>
+    <text x="690" y="211" fill="#f87171">AML.T0024 exfil via inference API</text>
+    <text x="690" y="306">INGRESS — completions return</text>
+    <text x="690" y="317" fill="#f87171">AML.T0096 AI service API as C2</text>
+  </g>
+
+  <!-- ============ THREAT ARROWS (two, straight) ============ -->
+  <g stroke-width="1.4" fill="none" stroke-dasharray="5,4">
+    <line x1="120" y1="80" x2="120" y2="196" stroke="#f87171" marker-end="url(#arrR)"/>
+    <line x1="1015" y1="160" x2="1015" y2="176" stroke="#f87171" marker-end="url(#arrR)"/>
+  </g>
+  <g font-size="8" fill="#f87171">
+    <text x="132" y="144">phishing (T0052)</text>
+    <text x="132" y="156">stolen keys (T0012)</text>
+  </g>
+
+  <!-- ============ ADVERSARY ============ -->
+  <rect x="70" y="30" width="220" height="50" rx="6" fill="rgba(127,29,29,0.35)" stroke="#f87171" stroke-width="1.2" stroke-dasharray="4,4"/>
+  <text x="84" y="52" font-size="10" fill="#f87171">adversary (external)</text>
+  <text x="84" y="68" font-size="8" fill="#94a3b8">targets clients, keys, and the trusted channel</text>
+
+  <!-- ============ CLIENT ============ -->
+  <rect x="90" y="200" width="210" height="110" rx="6" fill="#0f172a"/>
+  <rect x="90" y="200" width="210" height="110" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="104" y="226" font-size="12" fill="#e2e8f0">Hermes / any client</text>
+  <text x="104" y="244" font-size="8" fill="#64748b">agent tool-loops · chat · scripts</text>
+  <g font-size="8" fill="#f87171">
+    <rect x="104" y="252" width="145" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="110" y="262">AML.T0051.000 prompt inject</text>
+    <rect x="104" y="272" width="120" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="110" y="282">T0012 stolen valid keys</text>
+  </g>
+
+  <!-- ============ LITELLM ============ -->
+  <rect x="440" y="190" width="220" height="130" rx="6" fill="#0f172a"/>
+  <rect x="440" y="190" width="220" height="130" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="454" y="216" font-size="12" fill="#e2e8f0">LiteLLM proxy :4000</text>
+  <text x="454" y="234" font-size="8" fill="#64748b">virtual keys · budgets · RBAC</text>
+  <g font-size="8" fill="#f87171">
+    <rect x="454" y="244" width="135" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="460" y="254">AML.T0055 unsecured creds</text>
+    <rect x="454" y="264" width="159" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="460" y="274">AML.T0083 creds in agent cfg</text>
+    <rect x="454" y="284" width="100" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="460" y="294">T0034 cost harvest</text>
+  </g>
+
+  <!-- ============ POSTGRES ============ -->
+  <rect x="440" y="400" width="160" height="90" rx="6" fill="#0f172a"/>
+  <rect x="440" y="400" width="160" height="90" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="452" y="424" font-size="11" fill="#e2e8f0">Postgres :5432</text>
+  <text x="452" y="440" font-size="8" fill="#64748b">key/budget store</text>
+  <g font-size="8" fill="#f87171">
+    <rect x="452" y="452" width="115" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="458" y="462">T0036 info repository</text>
+  </g>
+
+  <!-- ============ OTEL ============ -->
+  <rect x="90" y="400" width="210" height="90" rx="6" fill="#0f172a"/>
+  <rect x="90" y="400" width="210" height="90" rx="6" fill="rgba(251,146,60,0.3)" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="104" y="424" font-size="11" fill="#e2e8f0">OTel collector :4318</text>
+  <text x="104" y="440" font-size="8" fill="#64748b">full prompts + responses</text>
+  <g font-size="8" fill="#f87171">
+    <rect x="104" y="452" width="145" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="110" y="462">AML.T0138 indicator removal</text>
+  </g>
+
+  <!-- ============ SPLUNK ============ -->
+  <rect x="90" y="540" width="210" height="110" rx="6" fill="#0f172a"/>
+  <rect x="90" y="540" width="210" height="110" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="104" y="564" font-size="11" fill="#e2e8f0">Splunk :8000</text>
+  <text x="104" y="580" font-size="8" fill="#64748b">index=llmlab · every prompt indexed</text>
+  <text x="104" y="594" font-size="8" fill="#94a3b8">detections + scheduled alerts</text>
+  <g font-size="8" fill="#f87171">
+    <rect x="104" y="604" width="130" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="110" y="614">T0085.002 context theft</text>
+  </g>
+
+  <!-- local enclave ghost -->
+  <rect x="440" y="540" width="220" height="60" rx="6" fill="none" stroke="#475569" stroke-width="1" stroke-dasharray="3,5"/>
+  <text x="454" y="562" font-size="9" fill="#64748b">local llama.cpp enclave</text>
+  <text x="454" y="578" font-size="8" fill="#475569">out of scope in this threat view</text>
+
+  <!-- ============ EXTERNAL SIDE ============ -->
+  <rect x="880" y="50" width="270" height="110" rx="6" fill="rgba(127,29,29,0.25)" stroke="#f87171" stroke-width="1.2" stroke-dasharray="4,4"/>
+  <text x="894" y="72" font-size="10" fill="#f87171">model supply risk</text>
+  <text x="894" y="88" font-size="8" fill="#94a3b8">provider trusted; models served may not be</text>
+  <g font-size="8" fill="#f87171">
+    <rect x="894" y="100" width="169" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="900" y="110">AML.T0115.001 poisoned artifacts</text>
+    <rect x="894" y="122" width="115" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="900" y="132">T0109 supply rug pull</text>
+  </g>
+
+  <rect x="880" y="180" width="270" height="140" rx="6" fill="#0f172a"/>
+  <rect x="880" y="180" width="270" height="140" rx="6" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="894" y="206" font-size="12" fill="#e2e8f0">Trusted AI provider (OpenRouter)</text>
+  <text x="894" y="224" font-size="8" fill="#64748b">cloud-model · cloud-auto · shared free tier</text>
+  <g font-size="8" fill="#f87171">
+    <rect x="894" y="236" width="184" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="900" y="246">AML.T0010.003 model repo compromise</text>
+    <rect x="894" y="256" width="100" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="900" y="266">T0014 model family</text>
+    <rect x="894" y="276" width="154" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="900" y="286">AML.T0040 inference API abuse</text>
+    <rect x="894" y="296" width="86" height="14" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/>
+    <text x="900" y="306">T0096 API C2</text>
+  </g>
+
+  <!-- ============ LEGEND ============ -->
+  <g font-size="9" fill="#94a3b8">
+    <text x="50" y="712">LEGEND</text>
+    <line x1="50" y1="730" x2="96" y2="730" stroke="#fbbf24" stroke-width="2.4"/><text x="104" y="733">flow crossing the trust boundary</text>
+    <line x1="292" y1="730" x2="338" y2="730" stroke="#22d3ee" stroke-width="1.6"/><text x="346" y="733">internal flow</text>
+    <line x1="440" y1="730" x2="486" y2="730" stroke="#f87171" stroke-width="1.4" stroke-dasharray="5,4"/><text x="494" y="733">adversary path</text>
+    <rect x="610" y="723" width="26" height="13" rx="3" fill="rgba(127,29,29,0.3)" stroke="#7f1d1d"/><text x="644" y="733">ATLAS technique badge (AML.Txxxx)</text>
+  </g>
+  <text x="50" y="762" font-size="8" fill="#475569">Key message: the trusted provider is a two-way hole in the boundary — prompts leave (T0024), foreign model output returns as trusted (T0096).</text>
+  <text x="50" y="778" font-size="8" fill="#475569">Detections (index=llmlab): secret-in-prompt · 401 spike · budget exhaustion · per-key attribution · direct-to-upstream attempts</text>
+</svg>
+</div>
+
+<div class="grid3">
+  <div class="card">
+    <div class="card-header"><h3><span class="dot red"></span>Boundary Crossing — the trust bet</h3></div>
+    <ul>
+      <li><span class="tid">AML.T0024</span> — exfil via inference API: prompts ARE the exfil channel</li>
+      <li><span class="tid">AML.T0025</span> — classic cyber exfil riding the same egress</li>
+      <li><span class="tid">AML.T0096</span> — AI service API as C2: commands hidden in normal traffic</li>
+      <li><span class="tid">AML.T0010.003 / T0109</span> — poisoned model served by the trusted vendor</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><span class="dot emerald"></span>Chokepoint — gateway &amp; keys</h3></div>
+    <ul>
+      <li><span class="tid">AML.T0012</span> — valid accounts: stolen/virtual keys</li>
+      <li><span class="tid">AML.T0055 / T0083</span> — creds in lab.env &amp; agent config</li>
+      <li><span class="tid">AML.T0051.000</span> — direct prompt injection at the client</li>
+      <li><span class="tid">AML.T0034</span> — cost harvesting through the gateway</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3><span class="dot orange"></span>Detection Plane — telemetry as target</h3></div>
+    <ul>
+      <li><span class="tid">AML.T0085.002</span> — Splunk indexes every prompt: context theft jackpot</li>
+      <li><span class="tid">AML.T0138</span> — attacker deletes/edits telemetry to cover tracks</li>
+      <li><span class="tid">AML.T0036</span> — Postgres/Splunk = information repositories to mine</li>
+      <li>Mitigation: index lockdown + per-key attribution (see cheatsheet §4)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card">
+  <h3><span class="dot rose"></span>ATLAS technique index (what each badge means here)</h3>
+  <table>
+    <tr><th>Technique</th><th>Where</th><th>Meaning in this lab</th><th>Mitigations (LiteLLM proxy / Splunk) → NIST SP 800-53 Rev 5</th></tr>
+    <tr><td><code>AML.T0051.000</code> — LLM Prompt Injection: Direct</td><td>Client</td><td>Direct prompt injection by the user/adversary at the LLM.</td><td>LiteLLM guardrails / prompt-injection filters on every request; hardened system prompts. → <b>SI-10</b> Information Input Validation, <b>AC-04</b> Information Flow Enforcement</td></tr>
+    <tr><td><code>AML.T0012</code> — Valid Accounts</td><td>Client / Gateway</td><td>Abuse of leaked or stolen virtual API keys for initial access.</td><td>Per-user virtual keys with expiry + instant revocation; per-key attribution makes every request attributable in Splunk. → <b>IA-05</b> Authenticator Management, <b>AC-02</b> Account Management, <b>AU-12</b> Audit Record Generation</td></tr>
+    <tr><td><code>AML.T0055</code> — Unsecured Credentials</td><td>Gateway</td><td>lab.env / env vars hold provider + master keys in plaintext.</td><td>Secrets out of env files into a vault; config baseline + least-privilege file permissions. → <b>IA-05</b>, <b>CM-06</b> Configuration Settings</td></tr>
+    <tr><td><code>AML.T0083</code> — Credentials from AI Agent Configuration</td><td>Gateway</td><td>Credentials readable from agent/gateway configuration.</td><td>No secrets in agent configs — vault references only; least-privilege access to config files. → <b>AC-06</b> Least Privilege, <b>IA-05</b></td></tr>
+    <tr><td><code>AML.T0034</code> — Cost Harvesting</td><td>Gateway</td><td>Excessive or resource-intensive queries driven through the gateway.</td><td>Per-key <code>max_budget</code> + TPM/RPM throttling; Splunk real-time alerts on budget trips; model fallbacks. → <b>SC-05</b> Denial-of-Service Protection, <b>AU-06</b> Audit Record Review &amp; Reporting</td></tr>
+    <tr><td><code>AML.T0024</code> — Exfiltration via AI Inference API</td><td>Boundary (egress)</td><td>Data leaves via the inference API — prompts and completions cross the firewall.</td><td>Gateway guardrails scan prompts/completions (decoy-secret detection, e.g. AKIA canaries); full-fidelity prompt capture in Splunk for DLP review. → <b>AC-04</b>, <b>AU-12</b></td></tr>
+    <tr><td><code>AML.T0025</code> — Exfiltration via Cyber Means</td><td>Boundary (egress)</td><td>Traditional exfiltration layered on the same trusted egress path.</td><td>Single egress chokepoint: only the LiteLLM container may reach the provider; clients and hosts have no direct outbound. → <b>SC-07</b> Boundary Protection, <b>AC-04</b></td></tr>
+    <tr><td><code>AML.T0096</code> — AI Service API</td><td>Boundary (ingress)</td><td>AI service API used as command-and-control channel.</td><td>Anomalous request-pattern/volume detection per key via scheduled Splunk alerts at the same chokepoint. → <b>SI-04</b> System Monitoring, <b>AU-06</b>, <b>SC-07</b></td></tr>
+    <tr><td><code>AML.T0010.003</code> — Supply Chain Compromise: Model Repository</td><td>Provider</td><td>Compromise of the model repository the provider serves.</td><td>Pin model versions in <code>litellm-config.yaml</code>; vet new models before wiring them in; track provider advisories. → <b>SR-03</b> Supply Chain Controls, <b>SA-09</b> External System Services</td></tr>
+    <tr><td><code>AML.T0109</code> — AI Supply Chain Rug Pull</td><td>Provider</td><td>Trusted model updated with a malicious variant.</td><td>Change control on model/config updates (CM); integrity checks on artifacts; canary prompts on any model change. → <b>SI-07</b> Information Integrity, <b>CM-03</b> Configuration Change Control</td></tr>
+    <tr><td><code>AML.T0115.001</code> — Publish Poisoned AI Artifacts: Models</td><td>Provider</td><td>Poisoned model artifacts published upstream, pulled by your gateway.</td><td>Model allowlist per key (RBAC <code>models:[…]</code>); validate artifacts before rollout; canary-test new models through the gateway. → <b>SI-07</b>, <b>SR-11</b> Component Authenticity, <b>AC-03</b> Access Enforcement</td></tr>
+    <tr><td><code>AML.T0040</code> — AI Model Inference API Access</td><td>Provider</td><td>Abuse of legitimate inference API access to probe/stage attacks.</td><td>Per-key model RBAC + rate limits; every query attributed and logged (key hash → Splunk). → <b>AC-03</b>, <b>AC-06</b>, <b>AU-12</b></td></tr>
+    <tr><td><code>AML.T0085.002</code> — Data from AI Services: Conversation Context and Memory</td><td>Splunk</td><td>Conversation context &amp; memory theft from the telemetry store.</td><td>Splunk index RBAC + local-only publishing (already: 8000/8088 on 127.0.0.1); restrict admin roles; retention caps. → <b>AC-03</b>, <b>AU-09</b> Protection of Audit Information</td></tr>
+    <tr><td><code>AML.T0138</code> — Indicator Removal</td><td>OTel/Splunk</td><td>Tampering with logs/spans to cover tracks.</td><td>Protect audit stores (roles, restricted FS access); pipeline-health heartbeat (validate.sh + HEC checks) alerts when telemetry stops. → <b>AU-09</b>, <b>AU-11</b> Audit Record Retention, <b>SI-04</b></td></tr>
+    <tr><td><code>AML.T0036</code> — Data from Information Repositories</td><td>Postgres / Splunk</td><td>Mining repositories holding keys, spend, and full prompts.</td><td>Postgres not published outside the podman network; least-privilege service accounts; audit store segmentation. → <b>AC-06</b>, <b>SC-07</b></td></tr>
+  </table>
+  <p style="font-size:11px;color:#94a3b8;margin-top:10px"><b style="color:#34d399">The pitch:</b> one LiteLLM gateway + one Splunk index gives you the universal control fabric for all of the above — per-user virtual keys (<b>IA-05/AC-02</b>), per-key budgets &amp; throttling (<b>SC-05</b>), model RBAC (<b>AC-03/AC-06</b>), guardrails at the chokepoint (<b>SI-10/AC-04</b>), full-fidelity telemetry with per-key attribution (<b>AU-12</b>), and real-time alerting on every pattern above (<b>SI-04/AU-06</b>). Control IDs verified against <code>cprt_SP_800_53_5_2_0.json</code> (Rev 5.2.0).</p>
+</div>
+
+<footer>LLMLab threat model · MITRE ATLAS overlay · generated 2026-11-23 · external-provider focus per direction</footer>
+</body>
+</html>

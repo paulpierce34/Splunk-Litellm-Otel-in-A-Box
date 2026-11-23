@@ -1,4 +1,4 @@
-# LLMLab — Control Every AI Call in Your Company
+# LLMLab — Control Every AI Call in Your Lab
 
 **One gateway. One set of records. Every AI request accounted for.**
 

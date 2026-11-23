@@ -2,22 +2,6 @@
 
 **One gateway. One set of records. Every AI request accounted for.**
 
----
-
-## Bottom Line Up Front
-
-**The problem:** Your people use AI (chatbots, coding assistants, autonomous agents). Every prompt they type — maybe containing your source code, client data, or trade secrets — goes straight to an AI provider with no checkpoint, no record, and no way to say "who sent what, when."
-
-**The fix (this project):** Put a **checkpoint** between your people and AI. Every request must pass through one gateway that checks *who* is asking (a personal key), *what* they can use (approved models only), *how much* they can spend (budgets), and *writes down everything* (full prompts and responses) into a security system where you can search and alert on it.
-
-**The proof it matters:** [THREAT MODEL](llmlab-threat-model-atlas.html) · [MITRE ATLAS + NIST 800-53 mapping](KEY-ATTRIBUTION-CHEATSHEET.html) — your three biggest insider risks (rogue agents, poisoned models, poisoned context) each map to controls this gateway gives you **on day one, for free**.
-
-**What it costs:** $0 in software. Runs on one Windows PC you already own. Nothing leaves your network except the AI calls themselves.
-
----
-
-## The One-Paragraph Version
-
 LLMLab is a working miniature of an "AI firewall." You (or a tool) ask for AI the normal way — but pointed at the gateway instead of at OpenAI/OpenRouter directly. The gateway checks your personal API key, enforces your budget and which models you're allowed, forwards the request to the real AI, and sends a complete record of the exchange (prompt, response, tokens, cost, who asked) to Splunk. Splunk is where you search history ("show me everything user X asked last week"), set alerts ("page me if someone's key sends 100 requests in 5 minutes"), and prove compliance ("here is the audit trail").
 
 Think airport security for AI: everyone needs a ticket (key), everyone goes through one checkpoint (gateway), and there's a camera record of everyone who passed through (Splunk).

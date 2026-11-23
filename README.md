@@ -1,4 +1,12 @@
+
+Lab Architecture:
 <img width="2480" height="1218" alt="image" src="https://github.com/user-attachments/assets/051045a6-d6d7-472b-8d50-ec4bd90897ee" />
+
+
+
+Threat Modeling Diagram:
+<img width="2255" height="1296" alt="image" src="https://github.com/user-attachments/assets/64f9a577-8176-402e-a3fc-3d4648d747e3" />
+
 # LLMLab — LLM Gateway Surveillance Lab (Sysadmin Runbook)
 
 **Purpose:** Home lab replicating a production design: all LLM inference goes through a controlled gateway (per-user keys, budgets, model RBAC), hitting an "air-gapped" local inference enclave — with every call's full telemetry (prompt, response, trace, timing, cost) indexed in Splunk for detection engineering.

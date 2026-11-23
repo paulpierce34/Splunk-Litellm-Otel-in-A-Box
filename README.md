@@ -1,235 +1,195 @@
-Threat Modeling Architecture Diagram:
-<img width="2255" height="1296" alt="image" src="https://github.com/user-attachments/assets/64f9a577-8176-402e-a3fc-3d4648d747e3" />
+# LLMLab — Control Every AI Call in Your Company
 
-# LLMLab — LLM Gateway Surveillance Lab (Sysadmin Runbook)
-
-**Purpose:** Home lab replicating a production design: all LLM inference goes through a controlled gateway (per-user keys, budgets, model RBAC), hitting an "air-gapped" local inference enclave — with every call's full telemetry (prompt, response, trace, timing, cost) indexed in Splunk for detection engineering.
-
-**Everything is free, local, and nothing is bound to `0.0.0.0`.**
+**One gateway. One set of records. Every AI request accounted for.**
 
 ---
 
-## 1. Architecture at a Glance
+## Bottom Line Up Front
 
-Open `llmlab-architecture.html` (in this folder) in a browser for the full visual.
+**The problem:** Your people use AI (chatbots, coding assistants, autonomous agents). Every prompt they type — maybe containing your source code, client data, or trade secrets — goes straight to an AI provider with no checkpoint, no record, and no way to say "who sent what, when."
 
-```
-Hermes / any client
-   │  Bearer <virtual key>
-   ▼
-LiteLLM proxy :4000  ──── Postgres :5432 (keys · budgets · spend)
-   │        │
-   │        └─ OTel spans ─► otelcol :4318 ─► Splunk HEC :8088 ─► index=llmlab
-   ▼
-qwen3-8b ─► scoped portproxy (vSwitch IP only) ─► llama.cpp CUDA :18434 (127.0.0.1 only)
-cloud-model / cloud-auto ─► OpenRouter (external, free tier, for RBAC tests)
-```
+**The fix (this project):** Put a **checkpoint** between your people and AI. Every request must pass through one gateway that checks *who* is asking (a personal key), *what* they can use (approved models only), *how much* they can spend (budgets), and *writes down everything* (full prompts and responses) into a security system where you can search and alert on it.
 
-**Security posture (why this is safe to run at home):**
-- llama.cpp is Hermes-managed and binds **127.0.0.1 only** — never exposed
-- The only path from containers to it is a Windows `netsh portproxy` listening **only** on the internal WSL vSwitch address `172.27.176.1:18434`, plus a firewall rule allowing inbound **only from `172.27.176.0/20`** (the podman/WSL internal subnet — not LAN-routable)
-- A direct request to the enclave from anything else returns **401** — this is the lab's "unauthorized direct-to-upstream" detection target
-- Splunk Web (:8000) and HEC (:8088) are published to localhost only; Splunk REST (:8089) is deliberately **not** published — search from inside the container
+**The proof it matters:** [THREAT MODEL](llmlab-threat-model-atlas.html) · [MITRE ATLAS + NIST 800-53 mapping](KEY-ATTRIBUTION-CHEATSHEET.html) — your three biggest insider risks (rogue agents, poisoned models, poisoned context) each map to controls this gateway gives you **on day one, for free**.
+
+**What it costs:** $0 in software. Runs on one Windows PC you already own. Nothing leaves your network except the AI calls themselves.
 
 ---
 
-## 2. Files in `~/llmlab/`
+## The One-Paragraph Version
 
-| File | Purpose |
-|---|---|
-| `compose.yaml` | **Declarative stack definition** (podman compose). Equivalent to bring-up.sh — use one or the other. |
-| `bring-up.sh` | Imperative bring-up (idempotent; `--fresh` removes & recreates all 4 containers). |
-| `validate.sh` | **12-check validator** — run any time; exits non-zero if anything is broken. |
-| `lab.env` | All secrets: `SPLUNK_PASSWORD`, `HEC_TOKEN`, `MASTER_KEY`, `USER_KEY`, `BUDGET_KEY`. |
-| `litellm-config.yaml` | Model definitions: `qwen3-8b` (local enclave), `cloud-model` (gemma-4-31b:free), `cloud-auto` (OpenRouter auto-router). |
-| `otel-config.yaml` | OTLP receiver :4318 → `splunk_hec` exporter → `http://splunk:8088`, index `llmlab`. |
-| `.llama_key` | The llama.cpp enclave API key (extracted from Hermes managed runtime — LiteLLM is the **sole holder**). |
-| `.openrouter_key` | OpenRouter key for the cloud models. |
-| `admin-setup.ps1` | Elevated one-time setup: portproxy + firewall rules (already applied). |
-| `gen_tokens.py` | Regenerates `lab.env` secrets (only if you want to rotate everything). |
+LLMLab is a working miniature of an "AI firewall." You (or a tool) ask for AI the normal way — but pointed at the gateway instead of at OpenAI/OpenRouter directly. The gateway checks your personal API key, enforces your budget and which models you're allowed, forwards the request to the real AI, and sends a complete record of the exchange (prompt, response, tokens, cost, who asked) to Splunk. Splunk is where you search history ("show me everything user X asked last week"), set alerts ("page me if someone's key sends 100 requests in 5 minutes"), and prove compliance ("here is the audit trail").
 
-**Images** (all pulled and cached): `docker.io/splunk/splunk:latest`, `ghcr.io/berriai/litellm:main-stable`, `docker.io/library/postgres:16-alpine`, `docker.io/otel/opentelemetry-collector-contrib:latest`.
-
-> ⚠️ Do **not** pull `ghcr.io/signalfx/splunk-otel-collector` — it 403s for anonymous pulls. The contrib image is the equivalent and works.
+Think airport security for AI: everyone needs a ticket (key), everyone goes through one checkpoint (gateway), and there's a camera record of everyone who passed through (Splunk).
 
 ---
 
-## 3. Prerequisites
+## What's Running Under the Hood
 
-- **Windows 11** with WSL2, **Podman 6.x** (`podman machine start` — the machine is WSL-backed, currently sized 2GiB, 10 CPUs; the host `.wslconfig` caps the whole WSL VM at 6GB so Splunk+LiteLLM coexist with the host's 16GB)
-- **Hermes managed llama.cpp runtime** running (auto-starts with Hermes desktop; serves `Qwen3-8B-128K-Q4_K_M` on `127.0.0.1:18434` with API key at `AppData\Local\hermes\runtimes\llamacpp\.api_key`)
-- **One-time host setup (already done, re-run only on a new machine):**
-  1. `%USERPROFILE%\.wslconfig` containing:
-     ```ini
-     [wsl2]
-     memory=6GB
-     processors=4
-     ```
-     then `wsl --shutdown`
-  2. Elevated `admin-setup.ps1` (portproxy + firewall rules):
-     ```powershell
-     Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy','Bypass','-NoProfile','-File','C:\Users\jluc\llmlab\admin-setup.ps1'
-     ```
-     Verify: `netsh interface portproxy show v4tov4` → shows `172.27.176.1 18434 → 127.0.0.1 18434`
+| Piece | What it is | Why you care |
+|---|---|---|
+| **LiteLLM** (port 4000) | The checkpoint/gateway | The *only* door to AI. Hands out personal keys, enforces budgets, blocks unauthorized models. This is where you get control. |
+| **Postgres** (port 5432, internal) | The key registry database | Remembers every key, who owns it, what they spent. The "list of ticket holders." |
+| **Splunk** (port 8000) | The recording & alerting system | Every prompt and response, searchable. Where alerts live. Your evidence locker. |
+| **OTel collector** (port 4318, internal) | The camera feed pipe | Moves the records from the gateway to Splunk automatically. |
+| **Your AI provider** | OpenAI/OpenRouter/whatever | The actual brain. The gateway decides who talks to it. |
+
+**Nothing is exposed to the internet or your LAN.** Splunk and the gateway answer only on this PC (`localhost`). Anyone scanning your network finds nothing.
 
 ---
 
-## 4. Bring the Stack Up
+## What You Need
+
+- One **Windows 11** PC with **16 GB RAM** (that's it — this was built on a standard gaming desktop)
+- **[Podman Desktop](https://podman-desktop.io/)** installed and its machine started (this is what runs the four pieces above in isolation)
+- Internet for the one-time download of the four container images (~3 GB)
+- About **10 minutes**
+
+No cloud accounts. No subscriptions. No Splunk license purchase (the included trial works, and a free permanent license exists — see [Licensing](#licensing-free-forever)).
+
+---
+
+## Deploy It
+
+### The Easy Way (one command)
 
 ```bash
 cd ~/llmlab
-
-# Option A — declarative (compose). Secrets MUST be exported first — docker-compose
-# is a child process and does NOT see unexported shell vars:
-set -a; source ./lab.env; set +a
-export LLAMA_KEY=$(cat .llama_key)
-export OPENROUTER_KEY=$(cat .openrouter_key)
-podman compose -f compose.yaml up -d
-
-# Option B — imperative (script, self-contained; handles env + index creation):
-bash bring-up.sh            # add --fresh to wipe & recreate containers
+bash bring-up.sh
 ```
 
-> **Important:** use Option A *or* B, not both on the same names — compose cannot adopt
-> script-created containers (name conflict) and vice versa. To migrate script→compose:
-> `bash bring-up.sh --fresh` is NOT needed; instead `podman rm -f splunk litellm postgres otelcol`
-> then run the compose commands above. Both produce an identical stack.
->
-> **Verified:** `podman compose -f compose.yaml config` exits 0 with zero "not set" warnings
-> when the env sequence above is followed. Skipping the `set -a` export makes compose silently
-> render **blank** `SPLUNK_PASSWORD`/`HEC_TOKEN` values — Splunk would boot with an empty admin
-> password. The `config` subcommand is your pre-flight check.
+That single script: creates an isolated network → starts the database → starts Splunk (takes 2–4 minutes on first boot) → starts the collector → starts the gateway → creates the Splunk "recording folder" (index) → waits until everything responds → prints your login info.
 
-Splunk's **first boot takes 2–4 minutes** (internal init). Watch it with:
+First run downloads images (~3 GB, a few minutes). Every run after that is ~30 seconds.
+
+Add `--fresh` to wipe everything and start over clean: `bash bring-up.sh --fresh`
+
+### The Structured Way (if you prefer declarative config)
 
 ```bash
-podman logs -f splunk    # wait for "Ansible playbook complete"
+cd ~/llmlab
+set -a; source ./lab.env; set +a          # load secrets into environment
+export LLAMA_KEY=$(cat .llama_key)        # (only if using a local model)
+export OPENROUTER_KEY=$(cat .openrouter_key)
+podman compose -f compose.yaml up -d
 ```
 
-`bring-up.sh` also **creates the `llmlab` index automatically** — compose users must do it once manually (Splunk's HEC does *not* auto-create indexes; events sent to a nonexistent index silently vanish):
+Then create the Splunk index once (the compose file doesn't do this automatically):
 
 ```bash
 source lab.env
-podman exec splunk bash -c "curl -sk 'https://localhost:8089/services/data/indexes' -u \"admin:$SPLUNK_PASSWORD\" --data-urlencode 'name=llmlab' --data-urlencode 'datatype=event' --data-urlencode 'maxTotalDataSizeMB=512' --data-urlencode 'frozenTimePeriodInSecs=7776000'"
+podman exec splunk bash -c "curl -sk 'https://localhost:8089/services/data/indexes' -u \"admin:$SPLUNK_PASSWORD\" --data-urlencode 'name=llmlab' --data-urlencode 'datatype=event' --data-urlencode 'maxTotalDataSizeMB=512'"
 ```
+
+> **Pick one method and stick with it** — running both on the same names causes container-name conflicts. To switch: `podman rm -f splunk litellm postgres otelcol`, then use the other method.
 
 ---
 
-## 5. Validate Everything
+## Prove It Works
 
 ```bash
 bash validate.sh
 ```
 
-Expected output — **12 passed, 0 failed**, covering:
-1. All 4 containers running
-2. Splunk Web :8000 / LiteLLM :4000 / HEC :8088 answering
-3. **Negative auth tests** (bad key → 401 at LiteLLM; direct enclave access → 401)
-4. Real inference through the whole path (LiteLLM → portproxy → Qwen3)
-5. Telemetry actually indexed in Splunk (`litellm:otel` events ≥ 1)
-6. Manual HEC round-trip event
+Runs 12 checks: containers alive → endpoints responding → wrong keys get rejected → a real AI call works end to end → the record actually landed in Splunk. Prints `12 passed, 0 failed` when healthy.
 
----
+Then log in and look around:
 
-## 6. Log In & Look Around (manual validation)
-
-**Splunk Web** — `http://localhost:8000`
-- User `admin`, password = `SPLUNK_PASSWORD` from `lab.env` (`grep SPLUNK_PASSWORD ~/llmlab/lab.env`)
-- First search to run:
-  ```spl
-  index=llmlab sourcetype=litellm:otel
-  ```
-  You'll see `raw_gen_ai_request` spans: `trace_id`, full `input.messages` (the prompt), `llm.openai.choices` (the model's response incl. reasoning), timing, cost, status.
-
-**LiteLLM Admin UI** — `http://localhost:4000/ui`
-- Key = `MASTER_KEY` from `lab.env`
-- Shows virtual keys, per-key spend, model routing
-
-**Quick CLI probes:**
-```bash
-source ~/llmlab/lab.env
-# Inference through the gateway (uses the enclave):
-curl -s http://localhost:4000/v1/chat/completions \
-  -H "Authorization: Bearer $MASTER_KEY" -H "Content-Type: application/json" \
-  -d '{"model":"qwen3-8b","messages":[{"role":"user","content":"Reply with exactly: HOP-OK"}],"max_tokens":400}'
-# Registered models:
-curl -s http://localhost:4000/v1/models -H "Authorization: Bearer $MASTER_KEY"
-# Unauthorized direct-to-enclave (the detection target — must be 401):
-curl -s -o /dev/null -w "%{http_code}\n" http://172.27.176.1:18434/v1/models
-```
-
-> Note: Qwen3 is a **reasoning model** — keep `max_tokens ≥ 300` or it burns the budget on chain-of-thought and returns empty `content`.
-
----
-
-## 7. Detection Engineering (SPL over `index=llmlab`)
-
-All detections query `index=llmlab sourcetype=litellm:otel`. Field extraction tip: the events are single-line JSON — use `spath` or `| rex` to pull fields, or index-time `props.conf` if you want them first-class.
-
-| Detection | SPL sketch |
-|---|---|
-| **Secret in prompt** | `index=llmlab sourcetype=litellm:otel input.messages="*AKIA*"` (pattern: `AKIA[0-9A-Z]{16}`) |
-| **Auth-failure spike** | `index=llmlab status.code=STATUS_CODE_ERROR \| timechart span=5m count` — bucket by key |
-| **Budget exhaustion** | LiteLLM logs budget-rejected requests → failure_callback spans |
-| **Direct-to-upstream attempt** | Any successful call NOT via LiteLLM (compare enclave access logs vs gateway spans) |
-| **Data exfil volume** | `stats sum(usage.completion_tokens) by key` over time — outlier detection |
-
-Schedule these as **alerting searches** in Splunk (works on the trial / Developer license; the free license's alerting is disabled but manual searches still run).
-
----
-
-## 8. Licensing Plan (all $0)
-
-| Phase | License | Why |
+| What | Where | Login |
 |---|---|---|
-| Now | **Enterprise trial** (docker image default) | Full features incl. scheduled alerts |
-| Request today | **Developer license** (dev.splunk.com/enterprise/dev_license, ~2–3 days) | 10GB/day, 6-month renewable, non-prod — alerting continues |
-| After trial | **Splunk Free** (`SPLUNK_LICENSE_URI=Free`) | Never expires; 500MB/day (lab uses ~nothing); alerting disabled, manual searches still work |
+| **Splunk** (the record system) | http://localhost:8000 | `admin` / password in `lab.env` |
+| **LiteLLM admin panel** (manage keys) | http://localhost:4000/ui | the `MASTER_KEY` from `lab.env` |
 
-To drop in the Developer license when it arrives:
-```yaml
-# add to the splunk service in compose.yaml / bring-up.sh:
-- SPLUNK_LICENSE_URI=/opt/splunk/etc/licenses/splunk.lic
-# plus volume-mount the .lic file
-```
+First Splunk search to try: `index=llmlab sourcetype=litellm:otel` — you'll see every AI request in full detail.
 
 ---
 
-## 9. Roadmap (not yet done — do these next session)
+## Day-to-Day Use
 
-1. **Register the virtual keys** — `USER_KEY` and `BUDGET_KEY` exist in `lab.env` but aren't yet registered in LiteLLM's DB. Via the `/ui` or `POST /key/generate`. Give `BUDGET_KEY` a tiny `max_budget` for the exhaustion test.
-2. **Point Hermes at the gateway** — `hermes config set model.provider custom`, `model.base_url http://localhost:4000/v1`, key via `~/.hermes/.env`. This makes *your own agent traffic* the monitored workload.
-3. **Trip the detections on purpose** — bad-key loop (401 spike), budget-exhaustion loop, decoy `AKIA...` in a prompt (stays local — that's why the enclave is the primary upstream).
-4. **Save the SPL detections as scheduled alerts** and test alert firing in the trial window.
+**Give someone AI access:** In the LiteLLM panel → Keys → Create Key. Name it after the person, set a monthly budget if you want. Hand them the `sk-...` string. That's their ticket — revoke it any time.
 
----
-
-## 10. Teardown / Reset (when YOU choose)
+**Make an AI request:** Point any OpenAI-compatible tool at the gateway instead of the provider:
 
 ```bash
-cd ~/llmlab
-bash bring-up.sh --fresh   # full clean rebuild (keeps lab.env secrets)
-# or:
-podman compose -f compose.yaml down          # stops & removes containers
-podman compose -f compose.yaml up -d         # back up
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer sk-THE-PERSONAL-KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "your-model", "messages": [{"role": "user", "content": "hello"}]}'
 ```
 
-**Persistence caveat (verified as-built):** Splunk's data (index, users, the `llmlab` index
-definition) lives **inside the splunk container's writable layer** — no named volume is
-mounted, so `podman rm splunk` / `down` **loses indexed data** and the index must be
-re-created (bring-up.sh does it automatically; compose users re-run the command in §4).
-If you want durability across rebuilds, add this to the splunk service in BOTH
-compose.yaml and bring-up.sh **before first deployment** on a fresh machine:
-```yaml
-    volumes:
-      - splunk-data:/opt/splunk/etc
-# ...and at file end:
-volumes:
-  splunk-data: {}
-```
+**Watch it live:** Splunk → search `index=llmlab` → watch records appear as people use AI.
 
-The **llama.cpp enclave and Hermes are untouched** by any teardown — they're managed by the Hermes desktop backend, not this lab.
+**Set an alert (example):** Splunk → Alerts → "page me if any key gets 401'd more than 10 times in 5 minutes" — that's someone using a stolen/guessed key.
 
 ---
 
-*Generated 2026-11-19, re-validated same evening · Lab state: 4 containers healthy, validate.sh 12/12 PASS (twice), 61+ litellm:otel events indexed, compose config validates clean.*
+## The Threat Model (Why This Actually Defends You)
+
+Full detail lives in two files — open them in a browser, they're presentation-ready:
+
+- **[llmlab-threat-model-atlas.html](llmlab-threat-model-atlas.html)** — the architecture diagram with MITRE ATLAS attack techniques overlaid on every component, focused on the **top 3 insider risks** for air-gapped IP environments:
+  1. **Rogue agents** — a malicious insider deploys an autonomous AI agent that *legitimately* holds tool access. Mitigation: the gateway chokepoint — every agent call needs a key, per-key rate limits, input/output validation, full attribution.
+  2. **Poisoned LLM** — malware smuggled across the air gap *inside* a trusted model file. Mitigation: import vetting, model allowlists, change control.
+  3. **Poisoned context** — an insider plants malicious instructions in a RAG index or MCP feed, hijacking AI behavior indirectly. Mitigation: treat retrieved content as untrusted input, scan it, allowlist sources.
+
+- **[KEY-ATTRIBUTION-CHEATSHEET.html](KEY-ATTRIBUTION-CHEATSHEET.html)** — the test/validation commands, Splunk search queries for every detection, and each mitigation mapped to formal **NIST SP 800-53 Rev 5 controls** (AC-02, AU-12, SC-05, SI-10, …) for your compliance conversations.
+
+**The pitch in one line:** the same gateway that gives you convenience (one door) gives you compliance evidence (one record) and insider-threat defense (one chokepoint) — features most vendors charge extra for.
+
+---
+
+## Licensing (Free Forever)
+
+| When | What | Why |
+|---|---|---|
+| Today | Splunk **Enterprise trial** (built into the container) | Full features including scheduled alerts, 60 days |
+| This week | Request the free **[Developer license](https://dev.splunk.com/enterprise/dev_license)** | 10 GB/day, renewable every 6 months, alerts keep working |
+| Any time | Or switch to **Splunk Free** | Permanent, 500 MB/day (this lab uses almost none), but scheduled alerts disabled — manual search still works |
+
+---
+
+## Fixing Problems
+
+| Symptom | Fix |
+|---|---|
+| `validate.sh` says a container isn't running | `podman ps -a` to see which; check its logs with `podman logs <name>` |
+| Splunk won't load / just spins | First boot takes 2–4 minutes. `podman logs -f splunk` and wait for "Ansible playbook complete" |
+| AI calls return 401 | The key you're using isn't registered in the gateway. Check with the `/key/info` command in the cheatsheet, or just create a fresh key in the UI |
+| Splunk has no events | The index `llmlab` must exist *before* events arrive — re-run the index-creation command in the Deploy section |
+| LiteLLM can't reach the database | Postgres container isn't up, or the password in `DATABASE_URL` doesn't match `SPLUNK_PASSWORD` |
+| Everything's broken, start over | `bash bring-up.sh --fresh` (wipes containers, keeps your secrets file) |
+
+---
+
+## Shut It Down / Start Over
+
+```bash
+podman compose -f compose.yaml down   # or: podman stop splunk litellm postgres otelcol
+```
+
+**Know before you tear down:** Splunk's recorded data lives inside its container. Stopping is fine — it comes back. *Deleting* the container (`rm`) deletes the recordings. If you want them permanent, add a named volume before first deployment (details in [RUNBOOK.md §10](RUNBOOK.md)).
+
+---
+
+## File Map (what's what in this folder)
+
+| File | Read it? | What it is |
+|---|---|---|
+| **README.md** | **you are here** | The human-friendly overview |
+| `RUNBOOK.md` | deep-dive | Original detailed ops runbook (more technical) |
+| `KEY-ATTRIBUTION-CHEATSHEET.html` | when validating | Test commands + Splunk queries + NIST mapping |
+| `llmlab-threat-model-atlas.html` | for presentations | Threat-model diagram (MITRE ATLAS overlay) |
+| `llmlab-architecture.html` | for presentations | Clean architecture diagram (no threats) |
+| `bring-up.sh` | run once | One-command deployment script |
+| `compose.yaml` | reference | The same deployment as declarative config |
+| `validate.sh` | run any time | 12-check health test |
+| `lab.env` | 🔴 secrets | Contains every password/key — **never commit, never share** |
+| `.llama_key` / `.openrouter_key` | 🔴 secrets | Upstream provider API keys |
+| `litellm-config.yaml` | edit to add models | Which AI models the gateway offers |
+| `otel-config.yaml` | don't touch | Telemetry plumbing |
+| `admin-setup.ps1` | run once (admin) | Windows firewall rules (local-only lab setup) |
+| `gen_tokens.py` | one-time | Generated the secrets originally |
+
+---
+
+*Built 2026-11-19 · threat-model extension 2026-11-23 · runs entirely on one Windows PC · zero cost software*
